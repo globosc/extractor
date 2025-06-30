@@ -1,55 +1,40 @@
-# Usa una imagen base oficial de Python
-FROM python:3.9-slim
+# Imagen base con Python + Playwright + navegadores + deps del sistema
+FROM mcr.microsoft.com/playwright/python
 
-# Establece la zona horaria a Chile
-ENV TZ=America/Santiago
+# Variables de entorno
+ENV TZ=America/Santiago \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_USER=extractor \
+    APP_HOME=/home/extractor
 
-# Argumentos para UID y GID del usuario
-ARG UID
-ARG GID
+# Crear usuario y directorios
+RUN useradd --create-home ${APP_USER} \
+    && mkdir -p /app ${APP_HOME}/salidas /app/logs \
+    && chown -R ${APP_USER}:${APP_USER} /app ${APP_HOME} /app/logs
 
-# Actualiza el índice de paquetes e instala dependencias necesarias
-RUN apt-get update && apt-get install -y \
-    curl \
-    net-tools \
-    iputils-ping \
-    gcc \
-    python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Establece el directorio de trabajo
+WORKDIR /app
 
-# Instala las dependencias de Python necesarias
-RUN pip install --no-cache-dir \
+# Copiar el código
+COPY --chown=${APP_USER}:${APP_USER} . /app
+
+# Instalar las dependencias necesarias de Python (ya trae pip y playwright)
+RUN pip install \
     fastapi \
     uvicorn \
     aiohttp \
     beautifulsoup4 \
     python-multipart \
-    httpx
+    httpx \
+    requests \
+    playwright && playwright install --with-deps
 
-# Establece el usuario y grupo con UID y GID del argumento
-RUN groupadd -g $GID extractor && \
-    useradd -r -u $UID -g extractor extractor
+# Cambiar a usuario no privilegiado
+USER ${APP_USER}
 
-# Establece el directorio de trabajo dentro del contenedor
-WORKDIR /app
-
-# Copia los archivos de tu aplicación al contenedor
-COPY . /app
-
-# Crea directorios necesarios
-RUN mkdir -p /home/globoscx/unews/salidas/extractor && \
-    mkdir -p /app/logs
-
-# Establece permisos adecuados
-RUN chown -R extractor:extractor /home/globoscx/unews/salidas/extractor && \
-    chown -R extractor:extractor /app/logs && \
-    chown -R extractor:extractor /app
-
-# Cambia al usuario no privilegiado
-USER extractor
-
-# Expone el puerto en el que correrá la aplicación
+# Exponer el puerto de la app
 EXPOSE 8000
 
-# Comando para ejecutar la aplicación usando Uvicorn con configuraciones optimizadas
+# Comando de ejecución con Uvicorn
 CMD ["uvicorn", "extractor:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--timeout-keep-alive", "65"]
